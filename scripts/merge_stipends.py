@@ -43,24 +43,31 @@ def clean_amount(amount):
 
 def merge_stipend_csvs():
     """
-    Merge all Pex transaction CSVs from Data/ folder.
+    Merge all Pex and Rapid transaction CSVs from Data/ folder.
     
     Steps:
-    1. Find all FY*.csv files
+    1. Find all Pex FY*.csv files and Rapid Transaction.csv
     2. Read each CSV
-    3. Keep only Date, Name, Amount columns
-    4. Clean amount formatting
-    5. Merge all dataframes
-    6. Sort by Name (alphabetical), then Date (chronological)
-    7. Export to Data/processed/merged_stipends.csv
+    3. Map columns to standard format (Date, Name, Amount)
+    4. Keep only Date, Name, Amount columns
+    5. Clean amount formatting
+    6. Merge all dataframes
+    7. Sort by Name (alphabetical), then Date (chronological)
+    8. Export to Data/processed/merged_stipends.csv
     """
     
     # Find all fiscal year CSV files
-    csv_pattern = 'Data/Pex Transactions - FY*.csv'
-    csv_files = sorted(glob.glob(csv_pattern))
+    pex_pattern = 'Data/Pex Transactions - FY*.csv'
+    pex_files = sorted(glob.glob(pex_pattern))
+    
+    # Find Rapid transaction file
+    rapid_file = 'Data/Rapid Transaction.csv'
+    rapid_exists = os.path.exists(rapid_file)
+    
+    csv_files = pex_files + ([rapid_file] if rapid_exists else [])
     
     if not csv_files:
-        print(f"Error: No CSV files found matching pattern '{csv_pattern}'")
+        print(f"Error: No CSV files found")
         return
     
     print(f"Found {len(csv_files)} CSV files:")
@@ -79,19 +86,37 @@ def merge_stipend_csvs():
         print(f"  Rows: {len(df)}")
         print(f"  Columns: {list(df.columns)}")
         
-        # Check if required columns exist
-        required_columns = ['Date', 'Name', 'Amount']
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        # Check if this is Rapid Transaction file (has 'date', 'transaction', 'Name', 'balance')
+        is_rapid = 'transaction' in df.columns and 'date' in df.columns
         
-        if missing_columns:
-            print(f"  Warning: Missing columns {missing_columns}. Skipping this file.")
-            continue
-        
-        # Keep only Date, Name, Amount columns
-        df = df[required_columns].copy()
+        if is_rapid:
+            print(f"  Type: Rapid Transaction")
+            # Map Rapid columns: date->Date, transaction->Amount, Name->Name
+            if 'date' not in df.columns or 'transaction' not in df.columns or 'Name' not in df.columns:
+                print(f"  Warning: Rapid file missing required columns. Skipping.")
+                continue
+            
+            # Rename columns to standard format
+            df = df.rename(columns={'date': 'Date', 'transaction': 'Amount'})
+            df = df[['Date', 'Name', 'Amount']].copy()
+        else:
+            print(f"  Type: Pex Transaction")
+            # Check if required Pex columns exist
+            required_columns = ['Date', 'Name', 'Amount']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                print(f"  Warning: Missing columns {missing_columns}. Skipping this file.")
+                continue
+            
+            # Keep only Date, Name, Amount columns
+            df = df[required_columns].copy()
         
         # Clean the Amount column
         df['Amount'] = df['Amount'].apply(clean_amount)
+        
+        # Add source tracking
+        df['Source'] = 'Rapid' if is_rapid else 'Pex'
         
         all_dataframes.append(df)
     
